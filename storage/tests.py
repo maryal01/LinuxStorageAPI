@@ -51,18 +51,51 @@ class LinuxStorageTest(TestCase):
         self.assertFalse(os.path.exists("./irods/test/subtest2"))
         
         #file -> file
-        #read the testfile11.txt
+        with open('./irods/test/subtest1/testfile11.txt') as f: testfile11_string = f.read()
         LinuxStorage.moveFile(LinuxStorage, "test/subtest1/testfile11.txt", "test/subtest1/subtest2/testfile22.txt")
-        #read the testfile22.txt
-        self.assertFalse(False)
-        
+        with open('./irods/test/subtest1/subtest2/testfile22.txt') as f: testfile22_string = f.read()
+        self.assertTrue(testfile11_string == testfile22_string)
+        self.assertFalse(os.path.exists("./irods/test/subtest1/testfile11.txt"))
+
         shutil.rmtree("./irods")
     
     def test_getfile(self):
-        pass
+        os.makedirs("./irods/manish/aryal")
+        os.makedirs("./irods/alva/couch")
+        os.makedirs("linuxtest")
+        open("./irods/manish/aryal/manishfile.txt","w+")
+        open("./irods/alva/couch/alvafile.txt","w+")
+
+        LinuxStorage.getFile(LinuxStorage, "manish", "linuxtest")
+        self.assertTrue(os.path.exists("./linuxtest/manish"))
+
+        LinuxStorage.getFile(LinuxStorage, "./alva/couch/alvafile.txt", "linuxtest")
+        self.assertTrue(os.path.exists("./linuxtest/alvafile.txt"))
+        shutil.rmtree("./irods")
+        shutil.rmtree("./linuxtest")
     
     def test_copyfile(self):
-        self.assertTrue(True)
+        LinuxStorage.saveFile(LinuxStorage, "./test", "./")
+        print("Here!!!")
+        #file --> directory
+        LinuxStorage.copyFiles(LinuxStorage, "test/testfile.txt", "test/subtest1")
+        self.assertTrue(os.path.exists("./irods/test/subtest1/testfile.txt"))
+        self.assertTrue(os.path.exists("./irods/test/testfile.txt"))
+        
+        #directory -> directory
+        LinuxStorage.copyFiles(LinuxStorage, "test/subtest2", "test/subtest1")
+        self.assertTrue(os.path.exists("./irods/test/subtest1/subtest2/testfile21.txt"))
+        self.assertTrue(os.path.exists("./irods/test/subtest1/subtest2/testfile22.txt"))
+        self.assertTrue(os.path.exists("./irods/test/subtest2"))
+        
+        #file -> file
+        with open('./irods/test/subtest1/testfile11.txt') as f: testfile11_string = f.read()
+        LinuxStorage.copyFiles(LinuxStorage, "test/subtest1/testfile11.txt", "test/subtest1/subtest2/testfile22.txt")
+        with open('./irods/test/subtest1/subtest2/testfile22.txt') as f: testfile22_string = f.read()
+        self.assertTrue(testfile11_string == testfile22_string)
+        self.assertTrue(os.path.exists("./irods/test/subtest1/testfile11.txt"))
+
+        shutil.rmtree("./irods")
 
 
 '''
