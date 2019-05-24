@@ -1,40 +1,30 @@
 from django.core.files.storage import  FileSystemStorage
-import os
-import shutil
-import tarfile
+import os, tarfile, shutil, errno
 from pprint import pprint
 
-#difference between getFile, saveFile and copyFile?
-# There are linux files and iRODS files. 
-# getfile gets a file from iRODS to linux. 
-# saveFile puts a file into iRODS from linux. 
-# copyFile copies a file from one iRODS place to another. 
-# Right now, the code uploads to /tmp, calls saveFile to save. 
-# This is just cp. 
-# When doing things with files it does getFile to /tmp, then processes. 
-# This is also a cp in your case. 
-# copyFile is a cp from one place to another. 
-
+IRODS_PATH = "./irods/"
 class LinuxStorage(FileSystemStorage):
+
+        def prepend_path(path):
+                if(not os.path.exists(IRODS_PATH)):
+                        os.makedirs(IRODS_PATH)        
+                if( path[0] != "/" ):
+                        path = path[2:] if path[0:2] == "./" else path
+                        return IRODS_PATH + path
+                else:
+                        return path
+        
         @property
         def getUniqueTmpPath(self):
                 pass
 
         def download(self, name):
-                return self.open(name, mode='rb')
+                irods_name = self.prepend_path(name)
+                return self.open(irods_name, mode='rb')
 
-        def getFile(self, source_name, destination_name):
-                self.saveFile(source_name, destination_name)
-
-        #do we need to implement this?
-        # this is zip. You need to run the zip. 
-        # these are not created equal. They're called elsewhere in the 
-        # code and mostly they run zip. 
         def runBagitRule(self, rule_name, input_path, input_resouce):
-                pass#irule
+                pass #irule
 
-        #are input_name and output_name files or directories?
-        # input_name is directory, output_name is zipfile
         def zipup(self, input_name, output_name):
                 file_name = output_name.rsplit("/", 1)[1]
                 tar = tarfile.open(file_name + ".tar.gz", "w:gz")
@@ -62,66 +52,88 @@ class LinuxStorage(FileSystemStorage):
                         i += 1
                         new_path = "{}-{}".format(path, i)
                 return new_path
+        '''
+                What is AVU doing?
+                setAVU -- stores the metadata associated with the file
+                getAVU -- There is a lookup table for each one and its deafault value; check that and return the default value
 
-        #do we need to implement this?
-        # it needs to do what the other one did as return value. 
-        # what this does is to store metadata associated with the file. 
-        # mostly it is not necessary to do anything, but the return value
-        # should be the same as for the original routine. 
+                Alva: he will generate default AVUs for everything.
+        '''
         def setAVU(self, name, attName, attVal, attUnit=None):
-                pass#imeta
+                pass
 
-        #do we need to implement this?
-        # always return False
-        # I can generate the default AVUs for everything. 
-        # There is a lookup table for each one and its default value. 
-        # look up the name and return the default value. 
         def getAVU(self, name, attName):
-                pass#imeta
+                return False
 
-        #src_name and dest_name can be either directory or a file name
+
+
+
+##########################################################################################################################
+
+        def removeDirecotry(self, dirname):
+                directory = self.prepend_path(dirname)
+                if(os.path.isfile(directory)):
+                        os.remove(directory)
+                elif(os.path.isdir(directory)):
+                        shutil.rmtree(directory)
+
+        # copies files or directories recursively within irods
         def copyFiles(self, src_name, dest_name, ires=None):
-                if src_name and dest_name:
-                        if os.path.exists(dest_name):
-                                shutil.rmtree(dest_name)
-                        shutil.copytree(src_name, dest_name)
-                return
+                src_irods = self.prepend_path(src_name)
+                dest_irods = self.prepend_path(dest_name)
+                try:
+                        shutil.copytree(src_irods, dest_irods)
+                except FileExistsError as e: 
+                        # if a dest_name is already present, create a directory within dest_name
+                        dest_irods = dest_irods + "/" + src_irods.rsplit("/",1)[1]
+                        shutil.copytree(src_irods, dest_irods)
+                except NotADirectoryError as exc: 
+                        # if copying a file, use shutil.copy
+                        if(not os.path.exists(dest_irods.rsplit('/', 1)[0])):
+                                os.makedirs(dest_irods.rsplit('/', 1)[0]) 
+                        shutil.copy(src_irods, dest_irods)
 
+        # moves (copy and remove the source directory) files or directories recursively
         def moveFile(self, src_name, dest_name):
-                if src_name and dest_name:
-                        if os.path.exists(dest_name):
-                                shutil.rmtree(dest_name)
-                        shutil.move(src_name, dest_name)
-                return
-
+                self.copyFiles(LinuxStorage, src_name, dest_name)
+                self.removeDirecotry(LinuxStorage, src_name)
+        
+        # copies files or directories recursively from linux to irods
         def saveFile(self, from_name, to_name, create_directory=False, data_type_str=''):
-                if create_directory:
-                        splitstrs = to_name.rsplit('/', 1)
-                        os.makedirs(splitstrs[0])
-                        if len(splitstrs) <= 1:
+                if create_directory == True:
+                        splitted_directory = to_name.rsplit("/",1)
+                        os.makedirs(splitted_directory[0])
+                        if (len(splitted_directory) <= 0):
                                 return
-                with open(from_name, 'r') as content_file:
-                        content = content_file.read()
-                        self.save(to_name, content)
-                return
+                else:
+                        if from_name:
+                                dest_irods = self.prepend_path(to_name)
+                                try:
+                                        shutil.copytree(from_name, dest_irods)
+                                except FileExistsError as e: 
+                                        # if a dest_name is already present, create a directory within dest_name
+                                        dest_irods = dest_irods + "/" + from_name.rsplit("/",1)[1]
+                                        shutil.copytree(from_name, dest_irods)
+                                except NotADirectoryError as exc: 
+                                        # if copying a file, use shutil.copy
+                                        if(not os.path.exists(dest_irods.rsplit('/', 1)[0])):
+                                                os.makedirs(dest_irods.rsplit('/', 1)[0]) 
+                                        shutil.copy(from_name, dest_irods)
 
-        #formatting of this? os.listdir(path) returns the list of content in that directory
-        # the code is expecting a specific format. Look at what ils 
-        # does and duplicate. You can also read the django docs on what 
-        # this should return. 
-        #SOLUTION == create management command in through ssh --- home
+        # copies files or directories recursively from irods to linux
+        def getFile(self, source_name, destination_name):
+                src_irods = self.prepend_path(source_name)
+                try:
+                        shutil.copytree(src_irods, destination_name)
+                except FileExistsError as e: 
+                        # if a dest_name is already present, create a directory within dest_name
+                        destination_name = destination_name + "/" + src_irods.rsplit("/",1)[1]
+                        shutil.copytree(src_irods, destination_name)
+                except NotADirectoryError as exc: 
+                        # if copying a file, use shutil.copy
+                        if(not os.path.exists(destination_name.rsplit('/', 1)[0])):
+                                os.makedirs(destination_name.rsplit('/', 1)[0]) 
+                        shutil.copy(src_irods, destination_name)
+
         def ils_l(self, path): 
                 return os.listdir(path)
-
-
-#where are the files uploaded being stored? if it is a different place,
-# i need to use self.exists(path) rather than os.path.exists(path)?
-# self.exists(path) is relative. 
-# os.path.exists(path) is absolute. 
-# if path starts with / these are the same. 
-# if not, default directory prefix is added. 
-# you can make up the prefix. Put in settings.py for now. 
-# that directory will store all resources in the pattern 
-# $dir/{resource_id}/data/contents/.....
-# $dir/bags/{resource_id}.zip is the zipfile of that. 
-
