@@ -1,3 +1,3 @@
-# testStorage
+# LinuxStorage
 
-Testing the linux storage file system
+Creating api endpoints to use linux storage file system.
